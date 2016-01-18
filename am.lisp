@@ -1,49 +1,132 @@
-(defparameter *rules* '(:a :a :a))
-(defparameter *a* '(:sub :v))
-(defparameter *name* #(:creature :place))
-(defparameter *creature* #("猫" "犬" "人間"))
-(defparameter *place* #("森" "海" "山"))
-(defparameter *sub* '(:name :p))
-(defparameter *p* #(("が") ("は") ("に") ("を") ("や" :sub)))
-(defparameter *v* #("歩く" ((:none (:place #("を" "で"))) "走る")))
+(defvar *abstruct-list* `((:pg . ,*pg*)
+                          (:sub . ,*sub*)
+                          (:verb . ,*verb*)
+                          (:noun . ,*noun*)
+                          (:creature . ,*creature*)
+                          (:place . ,*place*)
+                          (:par . ,*par*)
+                          ))
 
-;list -> ルール
-;vector -> シンボル(中から1つ選ぶ)
+(defvar *pg* '(:sub :verb "。"))
+(defvar *sub* '(:noun :par))
+(defvar *noun* #(:creature :place))
+
+(defstruct
+  (vocab (:constructor defvocab
+          (sym parent attr contain rule)))
+  (sym "")
+  (parent nil)
+  (attr #())
+  (contain #())
+  (rule '()))
+
+(defparameter *verb*
+  (defvocab "verb" nil nil
+            `#(,(defvocab "移動する" :verb
+                        #("足")
+                        nil
+                        '(:contain)))
+            '(:contain)))
+
+;指定した要素を語彙の含む要素から探す
+(defun find-vocab (parent sym)
+  (loop for v across (vocab-contain parent)
+        when (string= (vocab-sym v) sym)
+        nconc v))
+
+(defun find-vocab-recursive (parent sym)
+  (if (vocab-p parent)
+    (if (string= (vocab-sym parent) sym) parent
+      (loop for v across (vocab-contain parent)
+            collect (find-vocab-recursive v sym)))))
+
+(defun find-all-vocab (sym)
+  (loop for ab in *abstruct-list*
+        append (find-vocab-recursive ab sym)))
+
+;語彙の含む要素を定義
+(defmacro defcontain (parent sym contain)
+  `(setf (vocab-contain (car (find-vocab ,parent ,sym))) ,contain))
+
+(defcontain *verb* "移動する"
+            #((defvocab "歩く")))
+
+(defparameter *creature*
+  (defvocab "creature" nil nil
+            `#(,(defvocab "人間" :creature
+                        #("足" "腕")
+                        #("たかし")
+                        '(:contain))
+              ,(defvocab "猫" :creature
+                        #("足" "手")
+                        #("三毛猫")
+                        '(:contain))
+              ,(defvocab "犬" :creature
+                        #("足" "手")
+                        #("柴犬" "土佐犬")
+                        '(:contain)))
+            '(:contain)))
+
+(defparameter *place*
+  (defvocab "place" nil nil
+            `#(,(defvocab "森" :place
+                        #("木")
+                        #("森林公園")
+                        '(:contain))
+              ,(defvocab "海岸" :place
+                        #("水" "砂浜")
+                        #("リアス海岸" "千歳海岸")
+                        '(:contain))
+              ,(defvocab "山" :place
+                        #("木" "岩" "森")
+                        #("岩手山" "姫神山" "富士山")
+                        '(:contain)))
+            '(:contain)))
+
+(defparameter *par*
+  (defvocab "par" nil nil
+            `#(,(defvocab "が" nil nil nil nil)
+              ,(defvocab "の" nil nil nil nil)
+              ,(defvocab "を" nil nil nil nil)
+              ,(defvocab "に" nil nil nil nil)
+              ,(defvocab "へ" nil nil nil nil)
+              ,(defvocab "と" nil nil nil nil)
+              ,(defvocab "は" nil nil nil nil)
+              ,(defvocab "や" nil nil nil '("や" :sub)))
+            '(:contain)))
+
+(defmacro p-if (p fun &body body)
+  "pがnil以外ならpにfunを適用した値を返す"
+  `(let ((val ,p))
+     (if val (,fun val) ,@body)))
+
+(defun get-contain (vocab)
+  "指定したトップレベル要素の含む要素をランダムに返す"
+  (p-if (assoc vocab *abstruct-list*) (lambda (x) (choose (symbol-value (cdr x))))
+        (choose (vocab-contain vocab))))
 
 (defmacro choose (vec)
   "配列から1つランダムに取り出す"
   `(svref ,vec (random (length ,vec))))
 
-(defun am (rules)
-  "ルールの展開"
-  (format nil "~{~A~^~}" (loop for x in rules collect (ext x))))
+(defun get-sibling (vocab)
+  "兄弟要素を返す"
+  (choose (vocab-contain (vocab-parent vocab))))
 
-(defun ext (rule)
+;(defun expand-sym (sym)
+
+(defun eval-rule (rule)
+  "ルールの評価"
+  (format nil "~{~A~^~}" (loop for x in rule collect (eval-sym x))))
+
+(defun eval-sym (sym)
   "シンボルの展開"
-  (case rule
-    ;文章
-    (:a (concatenate 'string (am *a*) "。"))
-    ;名詞
-    (:name (ext (choose *name*)))
-    ;名詞-生物
-    (:creature (choose *creature*))
-    ;名詞-場所
-    (:place (choose *place*))
-    ;主語
-    (:sub (am *sub*))
-    ;助詞
-    (:p (am (choose *p*)))
-    ;動詞
-    (:v (ext (choose *v*)))
-    ;省略
-    (:none "")
-    ;その他
-    (t (if (typep rule 'string)
-         ;ルール
-         rule
-         (if (typep rule 'vector)
-           ;シンボル
-           (choose rule)
-           ;文字列
-           (am rule))))))
-
+  (if (vocab-p sym)
+    (if (vocab-rule sym)
+      (if (member :contain (vocab-rule sym))
+        (eval-rule (subst (choose (vocab-contain sym)) :contain (vocab-rule sym)))
+        (eval-rule (vocab-rule sym)))
+      (vocab-sym sym))
+    (if (typep sym 'list)
+      (eval-rule sym)
+      sym)))
