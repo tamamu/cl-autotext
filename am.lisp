@@ -11,6 +11,12 @@
 (defvar *sub* '(:noun :par))
 (defvar *noun* #(:creature :place))
 
+;語彙データ構造体
+;シンボル(参照)
+;親データ(シンボル)
+;属性(配列)
+;含む要素(配列)
+;ルール(リスト)
 (defstruct
   (vocab (:constructor defvocab
           (sym parent attr contain rule)))
