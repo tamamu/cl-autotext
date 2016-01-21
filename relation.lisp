@@ -23,6 +23,9 @@
         when (not (eql dst (cdr p)))
         collect p))
 
+(defmacro link (routes src dst)
+  `(cons '(,src . ,dst) ,routes))
+
 ;アイテム同士の関連度を求める
 ;IN: routes(path list), src, dst
 ;OUT: 全経路の(1 / (2^n))の総和
